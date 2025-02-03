@@ -82,7 +82,7 @@ def get_inverted_image(image_route_in, image_route_out, type):
         raise ValueError(f"Invalid type: {type}. Choose between 'vertical' or 'horizontal'")
 
 
-# Function to generate a HTML document where it shows the original image and the ones which where generated in
+# Function to generate an HTML document where it shows the original image and the ones which where generated in
 # 'get_inverted_image' and 'get_mirror_image'
 def generate_html_file(image_route_in, image_route_out, html_out):
     with open(html_out, 'w') as file:
@@ -159,3 +159,51 @@ def detect_and_mark_faces(image_route_in, image_route_out, color,  text, blur_fa
             cv2.putText(image, text, (x - 475, y - 30), cv2.FONT_ITALIC, 0.9, color, 2, cv2.LINE_AA)
 
     return cv2.imwrite(image_route_out, image)
+
+def webcam_face_eyes():
+    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+    if face_cascade.empty(): raise Exception("¿Está seguro que es la ruta correcta?")
+    eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
+    if eye_cascade.empty(): raise Exception("¿Está seguro que es la ruta correcta?")
+    video = cv2.VideoCapture(0)
+    while video.isOpened():
+        ret, frame = video.read()
+        if frame is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            for (x, y, w, h) in faces:
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 0, 0), 2)
+                roi_gray = gray[y:y + h, x:x + w]
+                roi_color = frame[y:y + h, x:x + w]
+                eyes = eye_cascade.detectMultiScale(roi_gray)
+                for (ex, ey, ew, eh) in eyes:
+                    cv2.rectangle(roi_color, (ex, ey), (ex + ew, ey + eh), (0, 255, 0), 2)
+            cv2.imshow('Video', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    video.release()
+    cv2.destroyAllWindows()
+
+def webcam_blur_face():
+    face_cascade = cv2.CascadeClassifier('haarcascade_frontalface_default.xml')
+    if face_cascade.empty(): raise Exception("¿Está seguro que es la ruta correcta?")
+    eye_cascade = cv2.CascadeClassifier('haarcascade_eye.xml')
+    if eye_cascade.empty(): raise Exception("¿Está seguro que es la ruta correcta?")
+    video = cv2.VideoCapture(0)
+    while video.isOpened():
+        ret, frame = video.read()
+        if frame is not None:
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, 1.3, 5)
+            for (x, y, w, h) in faces:
+                # Extraer región de la cara
+                rostro = frame[y:y + h, x:x + w]
+                # Aplicar un desenfoque Gaussian
+                rostro_blur = cv2.GaussianBlur(rostro, (99, 99), 30)
+                # Reemplazar la región original con la desenfocada
+                frame[y:y + h, x:x + w] = rostro_blur
+            cv2.imshow('Video', frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    video.release()
+    cv2.destroyAllWindows()
