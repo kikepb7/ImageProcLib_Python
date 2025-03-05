@@ -1,4 +1,4 @@
-import cv2, json, xml.etree.ElementTree as ET
+import cv2, json
 
 def user_options():
     print("*********************************************")
@@ -43,8 +43,8 @@ def invalid_option():
 def save_new_image(option):
     image_route = input("Enter the path to the image: ")
     json_route = input("Enter the path to the json file: ")
-    xml_route = input("Enter the path to the xml file with stored labels: ")
     save_route = input("Enter the path where you like to save the new image: ")
+    save_json = input("Enter the path where you like to save the new json: ")
 
     # Ensure that the output file has a valid extension
     if not save_route.endswith(('.jpg', '.jpeg', '.png', '.bmp')):
@@ -64,9 +64,7 @@ def save_new_image(option):
         elif option == "square_face":
             img = get_square_on_faces(img, json_route)
         elif option == "apply_labels":
-            img = apply_labels_to_image(img, json_route)
-        elif option == "apply_stored_labels":
-            img = apply_stored_labels(img, xml_route)
+            img = apply_labels_to_image(img, json_route, save_json)
         else:
             print("Invalid option selected!")
             return
@@ -199,64 +197,53 @@ def apply_labels_to_image(image, json_route, save_json):
         width = int(bounding_box["Width"] * image_width)
         height = int(bounding_box["Height"] * image_height)
 
-        # Draw rectangle around face
-        cv2.rectangle(image, (x, y), (x + width, y + height), (255, 0, 0), 2)
+        # Ask user for a label/name
+        label = input(f"Enter a name for face {i + 1} at position ({x}, {y}): ").strip()
+        face["Name"] = label  # Store the name in JSON
 
-        # Get user input for labeling
-        label = input(f"Enter a label/name for face {i + 1}: ")
-        age_range = face.get("AgeRange", {})
-        gender = face.get("Gender", {}).get("Value", "Unknown")
-        emotions = face.get("Emotions", [])
+        # Determine if the person is a minor and blur the face if needed
+        is_minor = False
+        if "AgeRange" in face:
+            age_max = face["AgeRange"].get("High", 100)
+            if age_max < 18:
+                is_minor = True
+                face_region = image[y:y + height, x:x + width]
+                blurred_face = cv2.GaussianBlur(face_region, (51, 51), 30)
+                image[y:y + height, x:x + width] = blurred_face
+
+        # Assign rectangle color based on age and gender
+        if is_minor:
+            color = (255, 0, 0)  # Blue for minors
+        elif face.get("Gender", {}).get("Value") == "Male":
+            color = (0, 0, 255)  # Red for males
+        elif face.get("Gender", {}).get("Value") == "Female":
+            color = (0, 255, 0)  # Green for females
+        else:
+            color = (255, 255, 255)  # White for unknown
+
+        # Draw rectangle around the face
+        cv2.rectangle(image, (x, y), (x + width, y + height), color, 2)
 
         # Extract emotion text
-        emotion_text = ""
+        emotions = face.get("Emotions", [])
         if emotions:
-            emotions_sorted = sorted(emotions, key=lambda emotion: emotion["Confidence"], reverse=True)[:2]
+            emotions_sorted = sorted(emotions, key=lambda e: e["Confidence"], reverse=True)[:2]
             emotion_text = ", ".join(f"{e['Type']} ({e['Confidence']:.1f}%)" for e in emotions_sorted)
+        else:
+            emotion_text = "No emotion data"
 
-        # Store face information
-        labeled_faces.append({
-            "Name": label,
-            "Age": age_range,
-            "Gender": gender,
-            "Emotions": emotions_sorted,
-            "BoundingBox": bounding_box
-        })
-
-        # Position the label
+        # Position text labels
         label_position = (x, y - 10 if y > 20 else y + height + 20)
-        cv2.putText(image, label, label_position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1, cv2.LINE_AA)
+        emotion_position = (x, y - 30 if y > 40 else y + height + 40)
+        cv2.putText(image, label, label_position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
+        cv2.putText(image, emotion_text, emotion_position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1, cv2.LINE_AA)
 
-    # Save updated JSON
-    save_labeled_faces(labeled_faces, save_json)
+        # Store labeled face information
+        labeled_faces.append(face)
+
+        # Save updated JSON
+    with open(save_json, 'w') as file:
+        json.dump(data, file, indent=4)
 
     print(f"Labeled face data saved in --> {save_json}")
     return image
-
-
-# Function that reads tags from an XML file and draws them on the image
-def apply_stored_labels(image, xml_route):
-    tree = ET.parse(xml_route)
-    root = tree.getroot()
-
-    image_height, image_width, _ = image.shape
-
-    for face in root.findall(".//FaceDetails/Face"):
-        x = int(float(face.find("BoundingBox/Left").text) * image_width)
-        y = int(float(face.find("BoundingBox/Top").text) * image_height)
-        width = int(float(face.find("BoundingBox/Width").text) * image_width)
-        height = int(float(face.find("BoundingBox/Height").text) * image_height)
-        label = face.find("Name").text if face.find("Name") is not None else "Unknown"
-
-        # Draw rectangle and label on face
-        cv2.rectangle(image, (x, y), (x + width, y + height), (0, 255, 0), 2)
-        label_position = (x, y - 10 if y > 20 else y + height + 20)
-        cv2.putText(image, label, label_position, cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1, cv2.LINE_AA)
-
-    return image
-
-
-# Function that saves tagged data to a JSON file
-def save_labeled_faces(labeled_faces, save_json):
-    with open(save_json, 'w') as json_file:
-        json.dump({"FaceDetails": labeled_faces}, json_file, indent=4)
